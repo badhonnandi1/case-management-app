@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: case-management-ai
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    renderSubdomainPolicy: enabled
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY
+        value: "true"
+      - key: AI_ONLINE_ENABLED
+        value: "true"
+      - key: GEMINI_DEFAULT_MODEL
+        value: gemini-3.8-flash
+      - key: GEMINI_ALLOWED_MODELS
+        value: gemini-3.8-flash,gemini-3.7-flash,gemini-3.5-flash-lite
+      - key: AI_PRIVACY_POLICY_ID
+        value: gemini-free-selected-excerpts-2026-09-04
+      - key: AI_CONSENT_POLICY_VERSION
+        value: 2026-09-04-gemini-free-selected-excerpts-v1
+      - key: ANSWER_RATE_LIMIT_PER_MINUTE
+        value: "10"
+      - key: IP_RATE_LIMIT_PER_MINUTE
+        value: "30"
+      - key: SESSION_ISSUE_LIMIT_PER_MINUTE
+        value: "10"
+      - key: SESSION_TTL_SECONDS
+        value: "900"
+      - key: PROVIDER_TIMEOUT_MS
+        value: "30000"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SESSION_SIGNING_SECRET
+        sync: false

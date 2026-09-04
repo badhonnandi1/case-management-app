@@ -1,0 +1,35 @@
+{
+  "name": "case-management-ai-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "dev:env": "node --env-file=.env --import tsx src/index.ts",
+    "start": "node dist/server/src/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test",
+    "check": "npm run typecheck && npm run lint",
+    "test": "node --import tsx --test test/*.test.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "smoke:no-key": "node --import tsx src/noKeySmoke.ts",
+    "smoke:live": "node --env-file=.env --import tsx src/liveSmoke.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "11.3.0",
+    "@google/genai": "2.21.0",
+    "fastify": "5.12.1",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.3.0",
+    "eslint": "10.0.0",
+    "tsx": "4.23.13",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.69.0"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Case Management",
+    "slug": "case-management",
+    "version": "1.2.0",
+    "platforms": [
+      "android"
+    ],
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "com.casemanagement.app",
+      "versionCode": 3,
+      "adaptiveIcon": {
+        "backgroundColor": "#F4F6F8"
+      }
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-status-bar",
+      "expo-font",
+      "expo-sharing",
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "microphonePermission": false
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ]
+  }
+}
