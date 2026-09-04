@@ -37,7 +37,7 @@ async function performInitialization(): Promise<void> {
   const fts5 = await checkFts5Capability(database);
   // Keep the existing offline app usable on an unexpected SQLite build without
   // FTS5. Migration 4 remains pending and retrieval is never downgraded to LIKE.
-  await runMigrations(database, fts5.available ? undefined : 3);
+  await runMigrations(database, undefined, fts5.available ? undefined : new Set([4]));
   if (!fts5.available) {
     console.error(`Local AI indexing is unavailable because FTS5 is missing: ${fts5.reason ?? 'unknown error'}`);
   }

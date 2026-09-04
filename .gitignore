@@ -8,6 +8,7 @@ web-build/
 *.excalidraw
 *.casebackup
 backups/
+tmp/
 .env
 .env.*
 !.env.example

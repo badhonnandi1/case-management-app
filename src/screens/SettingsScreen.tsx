@@ -8,7 +8,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppCard } from '../components/AppCard';
 import { AppHeader } from '../components/AppHeader';
-import { AiSettingsSection } from '../components/ai/AiSettingsSection';
 import { EmptyState } from '../components/EmptyState';
 import { LATEST_SCHEMA_VERSION } from '../database/migrations';
 import type { ReminderDaysBefore, ReminderSettings } from '../models/CaseReminder';
@@ -169,11 +168,16 @@ export function SettingsScreen({ navigation }: SettingsScreenProps) {
             </AppCard>
           </View>
 
-          <AiSettingsSection onOpenAi={() => navigation.navigate('AI')} />
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>AI ASSISTANT</Text>
+            <AppCard style={styles.comingSoonCard}><View style={styles.iconContainer}><Ionicons name="sparkles-outline" size={21} color={colors.primary} /></View><View style={styles.textContainer}><Text style={styles.title}>Coming soon</Text><Text style={styles.description}>Deployment is in progress. Offline case-management features remain available.</Text></View></AppCard>
+          </View>
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>DATA</Text>
             <AppCard style={styles.menuCard}>
+              <SettingsLink icon="business-outline" title="Court Setup" description="Add and manage reusable court names and short codes" onPress={() => navigation.navigate('CourtSetup')} />
+              <View style={styles.menuDivider} />
               <SettingsLink icon="archive-outline" title="Backup, Export & Restore" description="Export Excel-compatible CSV or manage a full backup" onPress={() => navigation.navigate('BackupRestore')} />
               <View style={styles.menuDivider} />
               <SettingsLink icon="server-outline" title="Storage" description="Review local storage and clean generated files" onPress={() => navigation.navigate('Storage')} />
@@ -202,6 +206,7 @@ const styles = StyleSheet.create({
   section: { gap: spacing.md },
   sectionTitle: { ...typography.label, color: colors.textMuted },
   reminderCard: { paddingVertical: spacing.md },
+  comingSoonCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   toggleRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   iconContainer: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, backgroundColor: colors.primarySoft },
   textContainer: { flex: 1 },

@@ -19,6 +19,9 @@ import { HomeScreen } from '../screens/HomeScreen';
 import { ImagePreviewScreen } from '../screens/ImagePreviewScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { StorageScreen } from '../screens/StorageScreen';
+import { CourtSetupScreen } from '../screens/CourtSetupScreen';
+import { CaseTasksScreen } from '../screens/CaseTasksScreen';
+import { ONLINE_AI_ENABLED } from '../config/releaseFeatures';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import type { RootStackParamList, RootTabParamList } from './types';
@@ -26,8 +29,12 @@ import type { RootStackParamList, RootTabParamList } from './types';
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const AiAssistantScreen = lazy(async () => {
-  const module = await import('../screens/AiAssistantScreen');
-  return { default: module.AiAssistantScreen };
+  if (ONLINE_AI_ENABLED) {
+    const module = await import('../screens/AiAssistantScreen');
+    return { default: module.AiAssistantScreen };
+  }
+  const module = await import('../screens/AiComingSoonScreen');
+  return { default: module.AiComingSoonScreen };
 });
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
@@ -94,6 +101,8 @@ export function AppNavigator() {
           options={{ title: 'Backup & Restore' }}
         />
         <Stack.Screen name="Storage" component={StorageScreen} options={{ title: 'Storage' }} />
+        <Stack.Screen name="CourtSetup" component={CourtSetupScreen} options={{ title: 'Court Setup' }} />
+        <Stack.Screen name="CaseTasks" component={CaseTasksScreen} options={{ title: 'Case To-do Checklist' }} />
       </Stack.Navigator>
     </NavigationContainer>
     </Suspense>

@@ -5,8 +5,10 @@ import type {
   BackupManifest,
   PortableDocument,
 } from '../models/Backup';
-import type { Case, CaseStatus } from '../models/Case';
-import type { CaseHistory } from '../models/CaseHistory';
+import { REPRESENTED_SIDE_OPTIONS, type Case, type CaseStatus } from '../models/Case.ts';
+import type { CaseHistory, PaymentStatus } from '../models/CaseHistory';
+import type { Court } from '../models/Court';
+import type { CaseTask } from '../models/CaseTask';
 const CASE_STATUSES = new Set<CaseStatus>(['ACTIVE', 'PENDING', 'CLOSED']);
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}T/;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -34,6 +36,8 @@ export function createBackupManifest(
     historyCount: data.caseHistory.length,
     documentCount: data.documents.length,
     skippedDocumentCount,
+    courtCount: data.courts?.length ?? 0,
+    taskCount: data.caseTasks?.length ?? 0,
   };
 }
 
@@ -74,11 +78,20 @@ export function validateBackupBundle(
   const dataObject = requireRecord(dataValue, 'Backup data is invalid.');
   const cases = requireArray(dataObject.cases, 'Cases are missing.').map(validateCase);
   const caseIds = ensureUniqueIds(cases, 'case');
+  const courts = optionalArray(dataObject.courts).map(validateCourt);
+  const courtIds = ensureUniqueIds(courts, 'court');
+  for (const caseItem of cases) {
+    if (caseItem.courtId && !courtIds.has(caseItem.courtId)) {
+      throw new Error('A case references a missing court.');
+    }
+  }
   const caseHistory = requireArray(
     dataObject.caseHistory,
     'Hearing history is missing.',
   ).map((value) => validateHistory(value, caseIds));
   ensureUniqueIds(caseHistory, 'hearing record');
+  const caseTasks = optionalArray(dataObject.caseTasks).map((value) => validateTask(value, caseIds));
+  ensureUniqueIds(caseTasks, 'task');
   const documents = requireArray(dataObject.documents, 'Documents are missing.').map(
     (value) => validateDocument(value, caseIds),
   );
@@ -102,11 +115,13 @@ export function validateBackupBundle(
     manifest.caseCount !== cases.length ||
     manifest.historyCount !== caseHistory.length ||
     manifest.documentCount !== documents.length
+    || manifest.courtCount !== courts.length
+    || manifest.taskCount !== caseTasks.length
   ) {
     throw new Error('Backup record counts do not match the manifest.');
   }
 
-  return { manifest, data: { cases, caseHistory, documents, settings } };
+  return { manifest, data: { cases, courts, caseHistory, caseTasks, documents, settings } };
 }
 
 function validateManifest(value: unknown, currentSchemaVersion: number): BackupManifest {
@@ -133,6 +148,12 @@ function validateManifest(value: unknown, currentSchemaVersion: number): BackupM
     skippedDocumentCount: record.skippedDocumentCount === undefined
       ? 0
       : requireNonNegativeInteger(record.skippedDocumentCount, 'Skipped document count is invalid.'),
+    courtCount: record.courtCount === undefined
+      ? 0
+      : requireNonNegativeInteger(record.courtCount, 'Court count is invalid.'),
+    taskCount: record.taskCount === undefined
+      ? 0
+      : requireNonNegativeInteger(record.taskCount, 'Task count is invalid.'),
   };
 }
 
@@ -150,7 +171,9 @@ function validateCase(value: unknown): Case {
     partyName: requireNonEmptyString(record.partyName, 'A party name is missing.'),
     oppositePartyName: requireString(record.oppositePartyName, 'An opposite party value is invalid.'),
     representedSide: validateRepresentedSide(record.representedSide),
+    courtId: requireOptionalPortableString(record.courtId, 'A court reference is invalid.'),
     courtName: requireNonEmptyString(record.courtName, 'A court name is missing.'),
+    courtShortCode: requireOptionalPortableString(record.courtShortCode, 'A court short code is invalid.'),
     judgeName: requireNullableString(record.judgeName, 'A judge value is invalid.'),
     previousDate: requireOptionalDate(record.previousDate, 'A previous date is invalid.'),
     nextDate: requireOptionalDate(record.nextDate, 'A next hearing date is invalid.'),
@@ -170,16 +193,21 @@ function requireOptionalPortableString(value: unknown, message: string): string 
 
 function validateRepresentedSide(value: unknown): Case['representedSide'] {
   if (value === undefined || value === null) return null;
-  if (value !== 'PLAINTIFF' && value !== 'DEFENDANT') {
+  if (!REPRESENTED_SIDE_OPTIONS.some((option) => option.value === value)) {
     throw new Error('Backup contains an invalid represented side.');
   }
-  return value;
+  return value as Case['representedSide'];
 }
 
 function validateHistory(value: unknown, caseIds: Set<string>): CaseHistory {
   const record = requireRecord(value, 'A hearing record is invalid.');
   const caseId = requireNonEmptyString(record.caseId, 'A hearing case ID is missing.');
   if (!caseIds.has(caseId)) throw new Error('A hearing record references a missing case.');
+  const paymentStatus = validatePaymentStatus(record.paymentStatus);
+  const paymentAmountMinor = requireOptionalNonNegativeInteger(record.paymentAmountMinor, 'A payment amount is invalid.');
+  if (paymentStatus !== 'PAID' && paymentAmountMinor !== null) {
+    throw new Error('A payment amount requires Paid status.');
+  }
   return {
     id: requireNonEmptyString(record.id, 'A hearing record ID is missing.'),
     caseId,
@@ -188,8 +216,48 @@ function validateHistory(value: unknown, caseIds: Set<string>): CaseHistory {
     nextStep: requireNullableString(record.nextStep, 'A hearing next step is invalid.'),
     nextDate: requireOptionalDate(record.nextDate, 'A hearing next date is invalid.'),
     notes: requireNullableString(record.notes, 'Hearing notes are invalid.'),
+    paymentStatus,
+    paymentAmountMinor,
+    paymentNote: requireOptionalPortableString(record.paymentNote, 'A payment note is invalid.'),
     createdAt: requireTimestamp(record.createdAt, 'A hearing creation date is invalid.'),
   };
+}
+
+function validateCourt(value: unknown): Court {
+  const record = requireRecord(value, 'A court record is invalid.');
+  return {
+    id: requireNonEmptyString(record.id, 'A court ID is missing.'),
+    fullName: requireNonEmptyString(record.fullName, 'A court name is missing.'),
+    shortCode: requireNonEmptyString(record.shortCode, 'A court short code is missing.'),
+    createdAt: requireTimestamp(record.createdAt, 'A court creation date is invalid.'),
+    updatedAt: requireTimestamp(record.updatedAt, 'A court update date is invalid.'),
+  };
+}
+
+function validateTask(value: unknown, caseIds: Set<string>): CaseTask {
+  const record = requireRecord(value, 'A task record is invalid.');
+  const caseId = requireNonEmptyString(record.caseId, 'A task case ID is missing.');
+  if (!caseIds.has(caseId)) throw new Error('A task references a missing case.');
+  const completed = requireBoolean(record.completed, 'A task completion state is invalid.');
+  const completedAt = requireOptionalTimestamp(record.completedAt, 'A task completion date is invalid.');
+  if (completed !== Boolean(completedAt)) throw new Error('A task has inconsistent completion data.');
+  return {
+    id: requireNonEmptyString(record.id, 'A task ID is missing.'),
+    caseId,
+    title: requireNonEmptyString(record.title, 'A task title is missing.'),
+    note: requireOptionalPortableString(record.note, 'A task note is invalid.'),
+    dueDate: requireOptionalDate(record.dueDate, 'A task due date is invalid.'),
+    completed,
+    createdAt: requireTimestamp(record.createdAt, 'A task creation date is invalid.'),
+    completedAt,
+    updatedAt: requireTimestamp(record.updatedAt, 'A task update date is invalid.'),
+  };
+}
+
+function validatePaymentStatus(value: unknown): PaymentStatus | null {
+  if (value === undefined || value === null) return null;
+  if (value !== 'PAID' && value !== 'UNPAID') throw new Error('A payment status is invalid.');
+  return value;
 }
 
 function validateDocument(value: unknown, caseIds: Set<string>): PortableDocument {
@@ -264,6 +332,15 @@ function requireArray(value: unknown, message: string): unknown[] {
   return value;
 }
 
+function optionalArray(value: unknown): unknown[] {
+  return value === undefined ? [] : requireArray(value, 'Optional backup data is invalid.');
+}
+
+function requireBoolean(value: unknown, message: string): boolean {
+  if (typeof value !== 'boolean') throw new Error(message);
+  return value;
+}
+
 function requireString(value: unknown, message: string): string {
   if (typeof value !== 'string') throw new Error(message);
   return value;
@@ -306,6 +383,16 @@ function requireNonNegativeInteger(value: unknown, message: string): number {
   const result = requireInteger(value, message);
   if (result < 0) throw new Error(message);
   return result;
+}
+
+function requireOptionalNonNegativeInteger(value: unknown, message: string): number | null {
+  if (value === undefined || value === null) return null;
+  return requireNonNegativeInteger(value, message);
+}
+
+function requireOptionalTimestamp(value: unknown, message: string): string | null {
+  if (value === undefined || value === null) return null;
+  return requireTimestamp(value, message);
 }
 
 function isValidPortableDate(value: string): boolean {

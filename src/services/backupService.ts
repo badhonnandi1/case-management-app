@@ -15,7 +15,9 @@ import type {
 import type { CaseDocument } from '../models/CaseDocument';
 import { replaceAllPortableData } from '../repositories/backupRepository';
 import { getAllCaseHistory } from '../repositories/caseHistoryRepository';
+import { getAllCaseTasks } from '../repositories/caseTaskRepository';
 import { getAllCases } from '../repositories/caseRepository';
+import { getCourts } from '../repositories/courtRepository';
 import { getAllDocuments } from '../repositories/documentRepository';
 import { getAllSettings } from '../repositories/settingsRepository';
 import {
@@ -67,9 +69,11 @@ export function getLatestBackup(): File | null {
 }
 
 export async function createPortableBackup(): Promise<CreatedBackup> {
-  const [cases, caseHistory, allDocuments, allSettings] = await Promise.all([
+  const [cases, courts, caseHistory, caseTasks, allDocuments, allSettings] = await Promise.all([
     getAllCases(),
+    getCourts(),
     getAllCaseHistory(),
+    getAllCaseTasks(),
     getAllDocuments(),
     getAllSettings(),
   ]);
@@ -103,7 +107,9 @@ export async function createPortableBackup(): Promise<CreatedBackup> {
 
   const data: BackupData = {
     cases: [...cases].sort((a, b) => a.id.localeCompare(b.id)),
+    courts: [...courts].sort((a, b) => a.id.localeCompare(b.id)),
     caseHistory: [...caseHistory].sort((a, b) => a.id.localeCompare(b.id)),
+    caseTasks: [...caseTasks].sort((a, b) => a.id.localeCompare(b.id)),
     documents: portableDocuments.sort((a, b) => a.id.localeCompare(b.id)),
     settings: allSettings
       .filter((setting) => PORTABLE_SETTING_KEYS.has(setting.key))
@@ -270,6 +276,8 @@ export async function restoreValidatedBackup(backup: ValidatedBackup): Promise<R
       caseCount: backup.data.cases.length,
       historyCount: backup.data.caseHistory.length,
       documentCount: restoredDocuments.length,
+      courtCount: backup.data.courts.length,
+      taskCount: backup.data.caseTasks.length,
       cleanupWarning,
       reminderWarning,
     };

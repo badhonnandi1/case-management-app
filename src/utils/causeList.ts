@@ -49,16 +49,17 @@ export function buildCauseListHtml(
 
   return `<!DOCTYPE html>
   <html><head><meta charset="utf-8"><style>
-    @page { margin: 42px; }
-    body { color: #17212B; font-family: Arial, sans-serif; font-size: 12px; line-height: 1.45; }
+    @page { size: A4; margin: 14mm 13mm 15mm; }
+    body { color: #17212B; font-family: Arial, sans-serif; font-size: 12px; line-height: 1.55; }
     header { border-bottom: 2px solid #173B63; margin-bottom: 24px; padding-bottom: 14px; text-align: center; }
     h1 { color: #173B63; font-size: 22px; letter-spacing: 1.2px; margin: 0 0 7px; }
     .date { font-size: 14px; font-weight: 700; margin: 0 0 4px; }
     .meta { color: #66717D; margin: 0; }
-    .case { border-bottom: 1px solid #DDE2E7; break-inside: avoid; padding: 0 0 18px; margin: 0 0 18px; }
-    h2 { color: #17212B; font-size: 16px; margin: 0 0 12px; }
+    .case { break-inside: avoid-page; page-break-inside: avoid; padding: 2px 0 22px; margin: 0; }
+    .case + .case { border-top: 1.5px solid #AEB8C2; padding-top: 22px; }
+    h2 { color: #17212B; font-size: 15px; line-height: 1.55; margin: 0 0 12px; overflow-wrap: anywhere; }
     h2 span { color: #173B63; }
-    .row { display: flex; margin: 0 0 6px; }
+    .row { display: flex; margin: 0 0 7px; break-inside: avoid; }
     .label { color: #66717D; flex: 0 0 110px; font-weight: 700; }
     .value { flex: 1; white-space: pre-wrap; }
     footer { color: #66717D; font-size: 10px; margin-top: 22px; text-align: center; }

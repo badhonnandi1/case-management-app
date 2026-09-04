@@ -34,6 +34,7 @@ export function AddCaseScreen({ navigation }: AddCaseScreenProps) {
       submitLabel="Save Case"
       onSubmit={handleSubmit}
       submissionError={submissionError}
+      includeInitialPayment
     />
   );
 }

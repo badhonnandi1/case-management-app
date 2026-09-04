@@ -1,10 +1,11 @@
-import type {
-  Case,
-  CaseCounts,
-  CaseQueryOptions,
-  CaseStatus,
-  CreateCaseInput,
-  UpdateCaseInput,
+import {
+  REPRESENTED_SIDE_OPTIONS,
+  type Case,
+  type CaseCounts,
+  type CaseQueryOptions,
+  type CaseStatus,
+  type CreateCaseInput,
+  type UpdateCaseInput,
 } from '../models/Case';
 import { getDatabase } from '../database/database';
 import { isValidDateOnly, toLocalDateString } from '../utils/date';
@@ -20,7 +21,10 @@ interface CaseRow {
   party_name: string;
   opposite_party_name: string;
   represented_side: Case['representedSide'];
+  represented_role: Case['representedSide'];
+  court_id: string | null;
   court_name: string;
+  court_short_code: string | null;
   judge_name: string | null;
   previous_date: string | null;
   next_date: string | null;
@@ -48,6 +52,7 @@ interface NormalizedCaseInput {
   partyName: string;
   oppositePartyName: string;
   representedSide: Case['representedSide'];
+  courtId: string | null;
   courtName: string;
   judgeName: string | null;
   previousDate: string | null;
@@ -56,13 +61,18 @@ interface NormalizedCaseInput {
   nextStep: string | null;
   status: CaseStatus;
   notes: string | null;
+  previousPaymentStatus: NonNullable<CreateCaseInput['previousPaymentStatus']> | null;
+  previousPaymentAmountMinor: number | null;
+  previousPaymentNote: string | null;
 }
 
 const CASE_COLUMNS = `
-  id, case_number, case_type, case_serial, case_year, case_title, party_name,
-  opposite_party_name, represented_side, court_name, judge_name, previous_date,
-  next_date, previous_order, next_step, status,
-  notes, created_at, updated_at
+  cases.id, case_number, case_type, case_serial, case_year, case_title, party_name,
+  opposite_party_name, represented_side, represented_role, court_id,
+  COALESCE((SELECT full_name FROM courts WHERE id = cases.court_id), court_name) AS court_name,
+  (SELECT short_code FROM courts WHERE id = cases.court_id) AS court_short_code,
+  judge_name, previous_date, next_date, previous_order, next_step, status,
+  notes, cases.created_at, cases.updated_at
 `;
 
 function mapCase(row: CaseRow): Case {
@@ -75,8 +85,10 @@ function mapCase(row: CaseRow): Case {
     caseTitle: row.case_title,
     partyName: row.party_name,
     oppositePartyName: row.opposite_party_name,
-    representedSide: row.represented_side,
+    representedSide: row.represented_role ?? row.represented_side,
+    courtId: row.court_id,
     courtName: row.court_name,
+    courtShortCode: row.court_short_code,
     judgeName: row.judge_name,
     previousDate: row.previous_date,
     nextDate: row.next_date,
@@ -101,32 +113,57 @@ export async function createCase(input: CreateCaseInput): Promise<Case> {
   const id = createId();
   const timestamp = new Date().toISOString();
 
-  await database.runAsync(
-    `INSERT INTO cases (
-      id, case_number, case_type, case_serial, case_year, case_title, party_name,
-      opposite_party_name, represented_side, court_name, judge_name, previous_date,
-      next_date, previous_order, next_step, status, notes, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    id,
-    normalizedInput.caseNumber,
-    normalizedInput.caseType,
-    normalizedInput.caseSerial,
-    normalizedInput.caseYear,
-    normalizedInput.caseTitle,
-    normalizedInput.partyName,
-    normalizedInput.oppositePartyName,
-    normalizedInput.representedSide,
-    normalizedInput.courtName,
-    normalizedInput.judgeName,
-    normalizedInput.previousDate,
-    normalizedInput.nextDate,
-    normalizedInput.previousOrder,
-    normalizedInput.nextStep,
-    normalizedInput.status,
-    normalizedInput.notes,
-    timestamp,
-    timestamp,
-  );
+  await database.withExclusiveTransactionAsync(async (transaction) => {
+    const courtName = await resolveCourtName(transaction, normalizedInput.courtId, normalizedInput.courtName);
+    await transaction.runAsync(
+      `INSERT INTO cases (
+        id, case_number, case_type, case_serial, case_year, case_title, party_name,
+        opposite_party_name, represented_side, represented_role, court_id, court_name,
+        judge_name, previous_date, next_date, previous_order, next_step, status, notes,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id,
+      normalizedInput.caseNumber,
+      normalizedInput.caseType,
+      normalizedInput.caseSerial,
+      normalizedInput.caseYear,
+      normalizedInput.caseTitle,
+      normalizedInput.partyName,
+      normalizedInput.oppositePartyName,
+      legacyRepresentedSide(normalizedInput.representedSide),
+      normalizedInput.representedSide,
+      normalizedInput.courtId,
+      courtName,
+      normalizedInput.judgeName,
+      normalizedInput.previousDate,
+      normalizedInput.nextDate,
+      normalizedInput.previousOrder,
+      normalizedInput.nextStep,
+      normalizedInput.status,
+      normalizedInput.notes,
+      timestamp,
+      timestamp,
+    );
+
+    if (normalizedInput.previousDate) {
+      await transaction.runAsync(
+        `INSERT INTO case_history (
+          id, case_id, hearing_date, order_text, next_step, next_date, notes,
+          payment_status, payment_amount_minor, payment_note, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+        createId(),
+        id,
+        normalizedInput.previousDate,
+        normalizedInput.previousOrder,
+        normalizedInput.nextStep,
+        normalizedInput.nextDate,
+        normalizedInput.previousPaymentStatus,
+        normalizedInput.previousPaymentAmountMinor,
+        normalizedInput.previousPaymentNote,
+        timestamp,
+      );
+    }
+  });
 
   const createdCase = await getCaseById(id);
   if (!createdCase) {
@@ -168,8 +205,13 @@ export function getCases(options: CaseQueryOptions = {}): Promise<Case[]> {
       OR party_name LIKE ? ESCAPE char(92) COLLATE NOCASE
       OR opposite_party_name LIKE ? ESCAPE char(92) COLLATE NOCASE
       OR court_name LIKE ? ESCAPE char(92) COLLATE NOCASE
+      OR EXISTS (
+        SELECT 1 FROM courts
+        WHERE courts.id = cases.court_id
+          AND courts.short_code LIKE ? ESCAPE char(92) COLLATE NOCASE
+      )
     )`);
-    parameters.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    parameters.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
   }
 
   if (filter === 'ACTIVE' || filter === 'PENDING' || filter === 'CLOSED') {
@@ -228,6 +270,7 @@ export async function updateCase(id: string, input: UpdateCaseInput): Promise<Ca
     partyName: input.partyName ?? existingCase.partyName,
     oppositePartyName: input.oppositePartyName ?? existingCase.oppositePartyName,
     representedSide: input.representedSide === undefined ? existingCase.representedSide : input.representedSide,
+    courtId: input.courtId === undefined ? existingCase.courtId : input.courtId,
     courtName: input.courtName ?? existingCase.courtName,
     judgeName: input.judgeName === undefined ? existingCase.judgeName : input.judgeName,
     previousDate:
@@ -242,32 +285,37 @@ export async function updateCase(id: string, input: UpdateCaseInput): Promise<Ca
   const updatedCase = normalizeCaseInput(mergedCase);
   const database = await getDatabase();
 
-  await database.runAsync(
-    `UPDATE cases SET
-      case_number = ?, case_type = ?, case_serial = ?, case_year = ?, case_title = ?,
-      party_name = ?, opposite_party_name = ?, represented_side = ?, court_name = ?,
-      judge_name = ?, previous_date = ?, next_date = ?,
-      previous_order = ?, next_step = ?, status = ?, notes = ?, updated_at = ?
-     WHERE id = ?`,
-    updatedCase.caseNumber,
-    updatedCase.caseType,
-    updatedCase.caseSerial,
-    updatedCase.caseYear,
-    updatedCase.caseTitle,
-    updatedCase.partyName,
-    updatedCase.oppositePartyName,
-    updatedCase.representedSide,
-    updatedCase.courtName,
-    updatedCase.judgeName,
-    updatedCase.previousDate,
-    updatedCase.nextDate,
-    updatedCase.previousOrder,
-    updatedCase.nextStep,
-    updatedCase.status,
-    updatedCase.notes,
-    createNextTimestamp(existingCase.updatedAt),
-    id,
-  );
+  await database.withExclusiveTransactionAsync(async (transaction) => {
+    const courtName = await resolveCourtName(transaction, updatedCase.courtId, updatedCase.courtName);
+    await transaction.runAsync(
+      `UPDATE cases SET
+        case_number = ?, case_type = ?, case_serial = ?, case_year = ?, case_title = ?,
+        party_name = ?, opposite_party_name = ?, represented_side = ?, represented_role = ?,
+        court_id = ?, court_name = ?, judge_name = ?, previous_date = ?, next_date = ?,
+        previous_order = ?, next_step = ?, status = ?, notes = ?, updated_at = ?
+       WHERE id = ?`,
+      updatedCase.caseNumber,
+      updatedCase.caseType,
+      updatedCase.caseSerial,
+      updatedCase.caseYear,
+      updatedCase.caseTitle,
+      updatedCase.partyName,
+      updatedCase.oppositePartyName,
+      legacyRepresentedSide(updatedCase.representedSide),
+      updatedCase.representedSide,
+      updatedCase.courtId,
+      courtName,
+      updatedCase.judgeName,
+      updatedCase.previousDate,
+      updatedCase.nextDate,
+      updatedCase.previousOrder,
+      updatedCase.nextStep,
+      updatedCase.status,
+      updatedCase.notes,
+      createNextTimestamp(existingCase.updatedAt),
+      id,
+    );
+  });
 
   return getCaseById(id);
 }
@@ -402,8 +450,19 @@ function normalizeCaseInput(input: CreateCaseInput): NormalizedCaseInput {
   if (input.status !== 'ACTIVE' && input.status !== 'PENDING' && input.status !== 'CLOSED') {
     throw new Error('Invalid case status.');
   }
-  if (input.representedSide && input.representedSide !== 'PLAINTIFF' && input.representedSide !== 'DEFENDANT') {
+  if (input.representedSide && !REPRESENTED_SIDE_OPTIONS.some((option) => option.value === input.representedSide)) {
     throw new Error('Invalid represented side.');
+  }
+  const paymentStatus = input.previousPaymentStatus ?? null;
+  const paymentAmountMinor = input.previousPaymentAmountMinor ?? null;
+  if (paymentStatus !== null && paymentStatus !== 'PAID' && paymentStatus !== 'UNPAID') {
+    throw new Error('Invalid payment status.');
+  }
+  if (paymentAmountMinor !== null && (!Number.isSafeInteger(paymentAmountMinor) || paymentAmountMinor < 0)) {
+    throw new Error('Invalid payment amount.');
+  }
+  if (paymentStatus !== 'PAID' && paymentAmountMinor !== null) {
+    throw new Error('A payment amount requires Paid status.');
   }
 
   return {
@@ -415,6 +474,7 @@ function normalizeCaseInput(input: CreateCaseInput): NormalizedCaseInput {
     partyName: requiredText(input.partyName, 'Party name'),
     oppositePartyName: input.oppositePartyName.trim(),
     representedSide: input.representedSide ?? null,
+    courtId: optionalText(input.courtId),
     courtName: requiredText(input.courtName, 'Court name'),
     judgeName: optionalText(input.judgeName),
     previousDate,
@@ -423,7 +483,32 @@ function normalizeCaseInput(input: CreateCaseInput): NormalizedCaseInput {
     nextStep: optionalText(input.nextStep),
     status: input.status,
     notes: optionalText(input.notes),
+    previousPaymentStatus: paymentStatus,
+    previousPaymentAmountMinor: paymentAmountMinor,
+    previousPaymentNote: paymentStatus ? optionalText(input.previousPaymentNote) : null,
   };
+}
+
+interface CourtReader {
+  getFirstAsync<T>(source: string, ...params: (string | null)[]): Promise<T | null>;
+}
+
+async function resolveCourtName(
+  reader: CourtReader,
+  courtId: string | null,
+  legacyCourtName: string,
+): Promise<string> {
+  if (!courtId) return legacyCourtName;
+  const row = await reader.getFirstAsync<{ full_name: string }>(
+    'SELECT full_name FROM courts WHERE id = ?',
+    courtId,
+  );
+  if (!row) throw new Error('The selected court no longer exists.');
+  return row.full_name;
+}
+
+function legacyRepresentedSide(side: Case['representedSide']): 'PLAINTIFF' | 'DEFENDANT' | null {
+  return side === 'PLAINTIFF' || side === 'DEFENDANT' ? side : null;
 }
 
 function createNextTimestamp(previousTimestamp: string): string {

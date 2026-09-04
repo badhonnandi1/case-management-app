@@ -14,8 +14,8 @@ export async function generateCauseListPdf(
   if (cases.length === 0) throw new Error('Cannot generate a cause list without cases.');
   const result = await Print.printToFileAsync({
     html: buildCauseListHtml(selectedDate, cases, options),
-    width: 612,
-    height: 792,
+    width: 595,
+    height: 842,
     textZoom: 100,
   });
   const destination = getAvailableCauseListFile(getCauseListFileName(selectedDate));

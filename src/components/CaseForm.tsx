@@ -13,14 +13,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import type { Case, CaseStatus, CreateCaseInput, RepresentedSide } from '../models/Case';
+import { REPRESENTED_SIDE_OPTIONS, type Case, type CaseStatus, type CreateCaseInput, type RepresentedSide } from '../models/Case';
+import type { PaymentStatus } from '../models/CaseHistory';
 import { colors } from '../theme/colors';
 import { radius, spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
 import { isValidDateOnly } from '../utils/date';
 import { buildCaseNumber, parseCaseNumber } from '../utils/caseFormat';
+import { parsePaymentAmountMinor } from '../utils/payment';
 import { DatePickerField } from './DatePickerField';
 import { PrimaryButton } from './PrimaryButton';
+import { CourtPickerField } from './CourtPickerField';
 
 export interface CaseFormValues {
   caseTitle: string;
@@ -31,10 +34,14 @@ export interface CaseFormValues {
   partyName: string;
   oppositePartyName: string;
   representedSide: RepresentedSide | '';
+  courtId: string;
   courtName: string;
   judgeName: string;
   previousDate: string;
   previousOrder: string;
+  previousPaymentStatus: PaymentStatus | '';
+  previousPaymentAmount: string;
+  previousPaymentNote: string;
   nextDate: string;
   nextStep: string;
   status: CaseStatus;
@@ -48,6 +55,7 @@ interface CaseFormProps {
   submitLabel: string;
   onSubmit: (input: CreateCaseInput) => Promise<void>;
   submissionError?: string | null;
+  includeInitialPayment?: boolean;
 }
 
 export const EMPTY_CASE_FORM_VALUES: CaseFormValues = {
@@ -59,10 +67,14 @@ export const EMPTY_CASE_FORM_VALUES: CaseFormValues = {
   partyName: '',
   oppositePartyName: '',
   representedSide: '',
+  courtId: '',
   courtName: '',
   judgeName: '',
   previousDate: '',
   previousOrder: '',
+  previousPaymentStatus: '',
+  previousPaymentAmount: '',
+  previousPaymentNote: '',
   nextDate: '',
   nextStep: '',
   status: 'ACTIVE',
@@ -82,10 +94,14 @@ export function caseToFormValues(caseItem: Case): CaseFormValues {
     partyName: caseItem.partyName,
     oppositePartyName: caseItem.oppositePartyName,
     representedSide: caseItem.representedSide ?? '',
+    courtId: caseItem.courtId ?? '',
     courtName: caseItem.courtName,
     judgeName: caseItem.judgeName ?? '',
     previousDate: caseItem.previousDate ?? '',
     previousOrder: caseItem.previousOrder ?? '',
+    previousPaymentStatus: '',
+    previousPaymentAmount: '',
+    previousPaymentNote: '',
     nextDate: caseItem.nextDate ?? '',
     nextStep: caseItem.nextStep ?? '',
     status: caseItem.status,
@@ -98,6 +114,7 @@ export function CaseForm({
   submitLabel,
   onSubmit,
   submissionError,
+  includeInitialPayment = false,
 }: CaseFormProps) {
   const [values, setValues] = useState<CaseFormValues>(initialValues);
   const [errors, setErrors] = useState<CaseFormErrors>({});
@@ -186,20 +203,18 @@ export function CaseForm({
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>We Represent <Text style={styles.required}>*</Text></Text>
               <View style={styles.statusOptions}>
-                {([
-                  ['PLAINTIFF', 'Plaintiff (বাদী)'],
-                  ['DEFENDANT', 'Defendant (বিবাদী)'],
-                ] as const).map(([side, label]) => {
-                  const selected = values.representedSide === side;
+                {REPRESENTED_SIDE_OPTIONS.map((option) => {
+                  const selected = values.representedSide === option.value;
                   return (
                     <Pressable
-                      key={side}
+                      key={option.value}
                       accessibilityRole="radio"
+                      accessibilityLabel={option.label}
                       accessibilityState={{ checked: selected }}
-                      onPress={() => updateValue('representedSide', side)}
+                      onPress={() => updateValue('representedSide', option.value)}
                       style={({ pressed }) => [styles.statusOption, selected && styles.statusOptionSelected, pressed && styles.pressed]}
                     >
-                      <Text style={[styles.statusLabel, selected && styles.statusLabelSelected]}>{label}</Text>
+                      <Text style={[styles.statusLabel, selected && styles.statusLabelSelected]}>{option.label}</Text>
                     </Pressable>
                   );
                 })}
@@ -218,15 +233,14 @@ export function CaseForm({
           </FormSection>
 
           <FormSection title="Court Information">
-            <FormInput
-              label="Court Name"
-              required
-              value={values.courtName}
+            <CourtPickerField
+              selectedCourtId={values.courtId}
+              legacyCourtName={values.courtName}
               error={errors.courtName}
-              onChangeText={(value) => updateValue('courtName', value)}
-              placeholder="Court and location"
-              autoCapitalize="words"
-              maxLength={250}
+              onSelect={(court) => {
+                updateValue('courtId', court.id);
+                updateValue('courtName', court.fullName);
+              }}
             />
             <FormInput
               label="Judge Name"
@@ -257,6 +271,11 @@ export function CaseForm({
               multiline
               maxLength={5000}
             />
+            {includeInitialPayment ? (
+              <PaymentFields values={values} errors={errors} onChange={updateValue} />
+            ) : (
+              <Text style={styles.helperText}>Payment records are preserved in Hearing History. Use Add Hearing Update to record a new payment.</Text>
+            )}
             <DatePickerField
               label="Next Date"
               value={values.nextDate}
@@ -361,7 +380,7 @@ function FormSection({ title, children }: FormSectionProps) {
 
 interface FormInputProps extends Pick<
   TextInputProps,
-  'autoCapitalize' | 'maxLength' | 'multiline'
+  'autoCapitalize' | 'keyboardType' | 'maxLength' | 'multiline'
 > {
   label: string;
   value: string;
@@ -385,6 +404,7 @@ function FormInput({
   large = false,
   autoCapitalize,
   maxLength,
+  keyboardType,
 }: FormInputProps) {
   return (
     <View style={styles.field}>
@@ -400,6 +420,7 @@ function FormInput({
         autoCapitalize={autoCapitalize}
         autoCorrect={multiline}
         maxLength={maxLength}
+        keyboardType={keyboardType}
         multiline={multiline}
         textAlignVertical={multiline ? 'top' : 'center'}
         style={[
@@ -477,7 +498,6 @@ function validateCaseForm(values: CaseFormValues): CaseFormErrors {
     ['caseSerial', 'Case number'],
     ['caseYear', 'Case year'],
     ['partyName', 'Party name'],
-    ['courtName', 'Court name'],
     ['representedSide', 'Represented side'],
   ];
 
@@ -488,11 +508,30 @@ function validateCaseForm(values: CaseFormValues): CaseFormErrors {
     }
   }
 
+  if (!values.courtId.trim()) {
+    errors.courtName = values.courtName.trim()
+      ? 'Select or create a saved court for this case.'
+      : 'Court name is required.';
+  }
+
   if (values.previousDate.trim() && !isValidDateOnly(values.previousDate.trim())) {
     errors.previousDate = 'Enter a valid date in YYYY-MM-DD format.';
   }
   if (values.nextDate.trim() && !isValidDateOnly(values.nextDate.trim())) {
     errors.nextDate = 'Enter a valid date in YYYY-MM-DD format.';
+  }
+
+  if (values.previousPaymentStatus && !values.previousDate.trim()) {
+    errors.previousPaymentStatus = 'Select the previous date before recording payment.';
+  }
+  if (values.previousPaymentStatus !== 'PAID' && values.previousPaymentAmount.trim()) {
+    errors.previousPaymentAmount = 'Select Paid before entering an amount.';
+  } else if (values.previousPaymentStatus === 'PAID') {
+    try {
+      parsePaymentAmountMinor(values.previousPaymentAmount);
+    } catch (error) {
+      errors.previousPaymentAmount = error instanceof Error ? error.message : 'Enter a valid amount.';
+    }
   }
 
   return errors;
@@ -510,15 +549,70 @@ function toCreateCaseInput(values: CaseFormValues): CreateCaseInput {
     partyName: values.partyName.trim(),
     oppositePartyName: values.oppositePartyName.trim(),
     representedSide: values.representedSide || null,
+    courtId: values.courtId.trim(),
     courtName: values.courtName.trim(),
     judgeName: optionalText(values.judgeName),
     previousDate: optionalText(values.previousDate),
     nextDate: optionalText(values.nextDate),
     previousOrder: optionalText(values.previousOrder),
+    previousPaymentStatus: values.previousPaymentStatus || null,
+    previousPaymentAmountMinor: values.previousPaymentStatus === 'PAID'
+      ? parsePaymentAmountMinor(values.previousPaymentAmount)
+      : null,
+    previousPaymentNote: values.previousPaymentStatus ? optionalText(values.previousPaymentNote) : null,
     nextStep: optionalText(values.nextStep),
     status: values.status,
     notes: optionalText(values.notes),
   };
+}
+
+function PaymentFields({ values, errors, onChange }: {
+  values: CaseFormValues;
+  errors: CaseFormErrors;
+  onChange: <Key extends keyof CaseFormValues>(key: Key, value: CaseFormValues[Key]) => void;
+}) {
+  return (
+    <View style={styles.paymentGroup}>
+      <Text style={styles.fieldLabel}>Payment Status</Text>
+      <View style={styles.statusOptions}>
+        {(['PAID', 'UNPAID'] as const).map((status) => {
+          const selected = values.previousPaymentStatus === status;
+          return (
+            <Pressable
+              key={status}
+              accessibilityRole="radio"
+              accessibilityLabel={status === 'PAID' ? 'Paid' : 'Unpaid'}
+              accessibilityState={{ checked: selected }}
+              onPress={() => onChange('previousPaymentStatus', status)}
+              style={({ pressed }) => [styles.statusOption, selected && styles.statusOptionSelected, pressed && styles.pressed]}
+            >
+              <Text style={[styles.statusLabel, selected && styles.statusLabelSelected]}>{status === 'PAID' ? 'Paid' : 'Unpaid'}</Text>
+            </Pressable>
+          );
+        })}
+        <Pressable
+          accessibilityRole="radio"
+          accessibilityLabel="Payment not recorded"
+          accessibilityState={{ checked: values.previousPaymentStatus === '' }}
+          onPress={() => {
+            onChange('previousPaymentStatus', '');
+            onChange('previousPaymentAmount', '');
+            onChange('previousPaymentNote', '');
+          }}
+          style={({ pressed }) => [styles.statusOption, values.previousPaymentStatus === '' && styles.statusOptionSelected, pressed && styles.pressed]}
+        >
+          <Text style={[styles.statusLabel, values.previousPaymentStatus === '' && styles.statusLabelSelected]}>Not recorded</Text>
+        </Pressable>
+      </View>
+      {errors.previousPaymentStatus ? <Text accessibilityRole="alert" style={styles.fieldError}>{errors.previousPaymentStatus}</Text> : null}
+      {values.previousPaymentStatus === 'PAID' ? (
+        <FormInput label="Payment Amount" value={values.previousPaymentAmount} onChangeText={(value) => onChange('previousPaymentAmount', value)} placeholder="Optional, e.g. 1500.00" error={errors.previousPaymentAmount} keyboardType="decimal-pad" maxLength={18} />
+      ) : null}
+      {values.previousPaymentStatus ? (
+        <FormInput label="Payment Note" value={values.previousPaymentNote} onChangeText={(value) => onChange('previousPaymentNote', value)} placeholder="Optional short note" maxLength={500} />
+      ) : null}
+    </View>
+  );
 }
 
 function toTitleCase(value: CaseStatus): string {
@@ -632,6 +726,10 @@ const styles = StyleSheet.create({
   },
   statusLabelSelected: {
     color: colors.primary,
+  },
+  paymentGroup: {
+    gap: spacing.md,
+    paddingTop: spacing.sm,
   },
   submissionError: {
     ...typography.body,

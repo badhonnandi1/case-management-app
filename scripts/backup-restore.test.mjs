@@ -55,6 +55,26 @@ assert.equal(roundTrip.data.cases[0].caseSerial, '42');
 assert.equal(roundTrip.data.cases[0].representedSide, 'PLAINTIFF');
 assert.equal(roundTrip.data.caseHistory[0].caseId, caseRecord.id);
 assert.equal(roundTrip.data.documents[0].caseId, caseRecord.id);
+assert.deepEqual(roundTrip.data.courts, []);
+assert.deepEqual(roundTrip.data.caseTasks, []);
+assert.equal(roundTrip.data.caseHistory[0].paymentStatus, null);
+
+const newBackupData = {
+  ...backupData,
+  courts: [{ id: 'court-1', fullName: 'সদর সিভিল জজ আদালত', shortCode: 'সদর', createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' }],
+  cases: [{ ...caseRecord, courtId: 'court-1', courtShortCode: 'সদর', representedSide: 'PETITIONER' }],
+  caseHistory: [{ ...historyRecord, paymentStatus: 'PAID', paymentAmountMinor: 150075, paymentNote: 'Receipt saved' }],
+  caseTasks: [{ id: 'task-1', caseId: 'case-1', title: 'Prepare document', note: 'Draft and review', dueDate: '2026-09-10', completed: false, createdAt: '2026-09-01T00:00:00.000Z', completedAt: null, updatedAt: '2026-09-01T00:00:00.000Z' }],
+};
+const newManifest = backupUtils.createBackupManifest(newBackupData, '1.1.3', 5, '2026-09-04T00:00:00.000Z');
+const newRoundTrip = backupUtils.validateBackupBundle(newManifest, newBackupData, 5);
+assert.equal(newManifest.courtCount, 1);
+assert.equal(newManifest.taskCount, 1);
+assert.equal(newRoundTrip.data.cases[0].courtId, 'court-1');
+assert.equal(newRoundTrip.data.cases[0].representedSide, 'PETITIONER');
+assert.equal(newRoundTrip.data.caseHistory[0].paymentAmountMinor, 150075);
+assert.equal(newRoundTrip.data.caseTasks[0].title, 'Prepare document');
+assert.throws(() => backupUtils.validateBackupBundle(newManifest, { ...newBackupData, cases: [{ ...newBackupData.cases[0], courtId: 'missing' }] }, 5), /missing court/i);
 
 assert.throws(
   () => backupUtils.validateBackupBundle({ ...manifest, backupFormatVersion: 99 }, backupData, 2),
@@ -151,5 +171,8 @@ assert.doesNotMatch(restoreRepositorySource, /INSERT INTO case_reminders/);
 const backupServiceSource = readFileSync(new URL('../src/services/backupService.ts', import.meta.url), 'utf8');
 assert.doesNotMatch(backupServiceSource, /getAllCaseReminders/);
 assert.match(backupServiceSource, /syncScheduledReminders/);
+assert.match(backupServiceSource, /getCourts/);
+assert.match(backupServiceSource, /getAllCaseTasks/);
+assert.doesNotMatch(backupServiceSource, /getAllAi|aiChunks|aiMessages|apiKey|backendToken/i);
 
 console.log('Backup manifest, validation, round-trip, storage health, and transactional restore contracts passed.');

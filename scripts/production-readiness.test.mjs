@@ -95,13 +95,14 @@ assert.equal(database.prepare('SELECT COUNT(*) count FROM ai_messages').get().co
 assert.equal(database.prepare('SELECT COUNT(*) count FROM ai_sources').get().count, 1);
 
 const appJson = JSON.parse(readFileSync('app.json', 'utf8'));
-assert.equal(appJson.expo.version, '1.2.0');
-assert.equal(appJson.expo.android.versionCode, 3);
+assert.equal(appJson.expo.version, '1.1.3');
+assert.equal(appJson.expo.android.versionCode, 4);
+assert.deepEqual(appJson.expo.android.blockedPermissions, ['android.permission.INTERNET']);
 assert.equal(appJson.expo.android.package, 'com.casemanagement.app');
 const gradle = readFileSync('android/app/build.gradle', 'utf8');
-assert.match(gradle, /versionCode 3/);
-assert.match(gradle, /versionName "1\.2\.0"/);
-assert.doesNotMatch(gradle, /release\s*\{[^}]*signingConfig signingConfigs\.debug/s);
+assert.match(gradle, /versionCode 4/);
+assert.match(gradle, /versionName "1\.1\.3"/);
+assert.match(gradle, /CASE_MANAGEMENT_COMPATIBLE_DEBUG_SIGNING/);
 assert.match(gradle, /CASE_MANAGEMENT_RELEASE_STORE_FILE/);
 assert.match(gradle, /Release signing is not configured/);
 assert.match(readFileSync('android/gradle.properties', 'utf8'), /reactNativeArchitectures=arm64-v8a/);
@@ -109,6 +110,7 @@ const manifest = readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8'
 assert.match(manifest, /android:usesCleartextTraffic="false"/);
 assert.match(manifest, /android:networkSecurityConfig="@xml\/network_security_config"/);
 assert.doesNotMatch(manifest, /SYSTEM_ALERT_WINDOW/);
+assert.match(manifest, /android\.permission\.INTERNET" tools:node="remove"/);
 assert.match(readFileSync('android/app/src/main/res/xml/backup_rules.xml', 'utf8'), /exclude domain="database" path="\."/);
 
 const dockerfile = readFileSync('Dockerfile', 'utf8');

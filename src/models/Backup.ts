@@ -2,6 +2,8 @@ import type { AppSettings } from './AppSettings';
 import type { Case } from './Case';
 import type { CaseHistory } from './CaseHistory';
 import type { DocumentFileType } from './CaseDocument';
+import type { Court } from './Court';
+import type { CaseTask } from './CaseTask';
 
 export interface BackupManifest {
   backupFormatVersion: 1;
@@ -12,6 +14,8 @@ export interface BackupManifest {
   historyCount: number;
   documentCount: number;
   skippedDocumentCount: number;
+  courtCount: number;
+  taskCount: number;
 }
 
 export interface PortableDocument {
@@ -26,7 +30,9 @@ export interface PortableDocument {
 
 export interface BackupData {
   cases: Case[];
+  courts: Court[];
   caseHistory: CaseHistory[];
+  caseTasks: CaseTask[];
   documents: PortableDocument[];
   settings: AppSettings[];
 }
@@ -51,6 +57,8 @@ export interface RestoreResult {
   caseCount: number;
   historyCount: number;
   documentCount: number;
+  courtCount: number;
+  taskCount: number;
   cleanupWarning: boolean;
   reminderWarning: boolean;
 }

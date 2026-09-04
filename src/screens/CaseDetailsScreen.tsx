@@ -16,6 +16,7 @@ import type { CaseDetailsScreenProps } from '../navigation/types';
 import { getCaseById } from '../repositories/caseRepository';
 import { getHistoryByCaseId } from '../repositories/caseHistoryRepository';
 import { getDocumentsByCaseId } from '../repositories/documentRepository';
+import { getIncompleteTaskCount } from '../repositories/caseTaskRepository';
 import { deleteCaseWithLocalData } from '../services/caseLifecycleService';
 import {
   chooseImageForCase,
@@ -28,11 +29,13 @@ import { radius, spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
 import { formatDisplayDate } from '../utils/date';
 import { representedSideLabel } from '../utils/caseFormat';
+import { formatPaymentAmountMinor } from '../utils/payment';
 
 export function CaseDetailsScreen({ navigation, route }: CaseDetailsScreenProps) {
   const [caseItem, setCaseItem] = useState<Case | null>(null);
   const [history, setHistory] = useState<CaseHistory[]>([]);
   const [documents, setDocuments] = useState<CaseDocument[]>([]);
+  const [incompleteTaskCount, setIncompleteTaskCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [importingDocument, setImportingDocument] = useState(false);
@@ -43,14 +46,16 @@ export function CaseDetailsScreen({ navigation, route }: CaseDetailsScreenProps)
     setLoading(true);
     setError(null);
     try {
-      const [loadedCase, loadedHistory, loadedDocuments] = await Promise.all([
+      const [loadedCase, loadedHistory, loadedDocuments, loadedTaskCount] = await Promise.all([
         getCaseById(caseId),
         getHistoryByCaseId(caseId),
         getDocumentsByCaseId(caseId),
+        getIncompleteTaskCount(caseId),
       ]);
       setCaseItem(loadedCase);
       setHistory(loadedCase ? loadedHistory : []);
       setDocuments(loadedCase ? loadedDocuments : []);
+      setIncompleteTaskCount(loadedCase ? loadedTaskCount : 0);
     } catch (loadError) {
       console.error('Unable to load case details.', loadError);
       setError('The case details, documents, and hearing history could not be loaded.');
@@ -137,6 +142,7 @@ export function CaseDetailsScreen({ navigation, route }: CaseDetailsScreenProps)
       ? history.map((item): CaseDetailListItem => ({ kind: 'history', item }))
       : [{ kind: 'emptyHistory' } as const]),
   ];
+  const recentPayments = history.slice(0, 5);
 
   return (
     <SafeAreaView style={styles.screen} edges={['bottom']}>
@@ -168,7 +174,8 @@ export function CaseDetailsScreen({ navigation, route }: CaseDetailsScreenProps)
               </View>
               <Text style={styles.caseTitle}>{caseItem.caseTitle}</Text>
               <Text style={styles.caseNumber}>{caseItem.caseNumber}</Text>
-              <View style={styles.courtRow}><Ionicons name="business-outline" size={16} color={colors.textMuted} /><Text style={styles.courtName}>{caseItem.courtName}</Text></View>
+              <View style={styles.courtRow}><Ionicons name="business-outline" size={16} color={colors.textMuted} /><Text style={styles.courtName}>{courtDisplayValue(caseItem)}</Text></View>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Open to-do checklist, ${incompleteTaskCount} incomplete`} onPress={() => navigation.navigate('CaseTasks', { caseId })} style={({ pressed }) => [styles.todoButton, pressed && styles.editPressed]}><Ionicons name="checkbox-outline" size={20} color={colors.primary} /><Text style={styles.todoText}>To-do</Text><Text style={styles.todoCount}>{incompleteTaskCount}</Text></Pressable>
             </AppCard>
 
             <DetailSection title="Parties">
@@ -178,8 +185,13 @@ export function CaseDetailsScreen({ navigation, route }: CaseDetailsScreenProps)
             </DetailSection>
 
             <DetailSection title="Court Information">
-              <DetailRow label="Court" value={displayValue(caseItem.courtName)} />
+              <DetailRow label="Court" value={courtDisplayValue(caseItem)} />
               <DetailRow label="Judge" value={displayValue(caseItem.judgeName)} />
+            </DetailSection>
+
+            <DetailSection title="Recent Payment History">
+              {recentPayments.length ? recentPayments.map((payment) => <PaymentHistoryRow key={payment.id} item={payment} />) : <DetailRow label="Payment" value="Not recorded" />}
+              {history.length > 5 ? <Text style={styles.helperText}>Showing the latest five. Earlier payment records remain visible in Hearing History below.</Text> : null}
             </DetailSection>
 
             <DetailSection title="Hearing Information">
@@ -255,9 +267,25 @@ function HistoryItem({ item, isLast }: { item: CaseHistory; isLast: boolean }) {
         <HistoryField label="Next Hearing" value={item.nextDate} date />
         <HistoryField label="Next Step" value={item.nextStep} />
         <HistoryField label="Notes" value={item.notes} />
+        <HistoryField label="Payment" value={paymentDisplayValue(item)} />
+        <HistoryField label="Payment Note" value={item.paymentNote} />
       </AppCard>
     </View>
   );
+}
+
+function PaymentHistoryRow({ item }: { item: CaseHistory }) {
+  return <View style={styles.paymentRow}><Text style={styles.paymentDate}>{formatDisplayDate(item.hearingDate)}</Text><Text style={styles.paymentStatus}>{paymentDisplayValue(item)}</Text></View>;
+}
+
+function paymentDisplayValue(item: CaseHistory): string {
+  if (!item.paymentStatus) return 'Not recorded';
+  const amount = item.paymentStatus === 'PAID' ? formatPaymentAmountMinor(item.paymentAmountMinor) : '';
+  return item.paymentStatus === 'PAID' ? `Paid${amount ? ` · ৳${amount}` : ''}` : 'Unpaid';
+}
+
+function courtDisplayValue(caseItem: Case): string {
+  return caseItem.courtShortCode ? `${caseItem.courtName} (${caseItem.courtShortCode})` : displayValue(caseItem.courtName);
 }
 
 function HistoryField({ label, value, date = false }: { label: string; value: string | null; date?: boolean }) {
@@ -289,6 +317,9 @@ const styles = StyleSheet.create({
   detailValue: { ...typography.body, color: colors.text },
   emphasizedValue: { ...typography.bodyStrong, color: colors.primary },
   actions: { gap: spacing.md },
+  todoButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: spacing.sm, marginTop: spacing.md, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.primarySoft },
+  todoText: { ...typography.bodyStrong, color: colors.primary },
+  todoCount: { ...typography.caption, minWidth: 24, paddingHorizontal: spacing.xs, paddingVertical: 2, overflow: 'hidden', textAlign: 'center', borderRadius: radius.pill, backgroundColor: colors.primary, color: colors.surface },
   documentsHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   addDocumentButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.primarySoft },
   addDocumentText: { ...typography.bodyStrong, color: colors.primary },
@@ -314,4 +345,8 @@ const styles = StyleSheet.create({
   historyCard: { flex: 1, gap: spacing.lg },
   historyDate: { ...typography.subheading, color: colors.primary },
   historyField: { gap: spacing.xs },
+  paymentRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  paymentDate: { ...typography.body, color: colors.text },
+  paymentStatus: { ...typography.bodyStrong, color: colors.primary },
+  helperText: { ...typography.caption, color: colors.textMuted },
 });

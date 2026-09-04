@@ -4,6 +4,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,6 +18,7 @@ import { EmptyState } from '../components/EmptyState';
 import { DatePickerField } from '../components/DatePickerField';
 import { PrimaryButton } from '../components/PrimaryButton';
 import type { Case } from '../models/Case';
+import type { PaymentStatus } from '../models/CaseHistory';
 import type { AddHearingUpdateScreenProps } from '../navigation/types';
 import { getCaseById } from '../repositories/caseRepository';
 import { recordHearingUpdate } from '../repositories/caseHistoryRepository';
@@ -25,6 +27,7 @@ import { colors } from '../theme/colors';
 import { radius, spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
 import { isValidDateOnly, toLocalDateString } from '../utils/date';
+import { parsePaymentAmountMinor } from '../utils/payment';
 
 interface HearingFormValues {
   hearingDate: string;
@@ -32,6 +35,9 @@ interface HearingFormValues {
   nextDate: string;
   nextStep: string;
   notes: string;
+  paymentStatus: PaymentStatus | '';
+  paymentAmount: string;
+  paymentNote: string;
 }
 
 type HearingFormErrors = Partial<Record<keyof HearingFormValues, string>>;
@@ -61,6 +67,9 @@ export function AddHearingUpdateScreen({ navigation, route }: AddHearingUpdateSc
               nextDate: '',
               nextStep: '',
               notes: '',
+              paymentStatus: '',
+              paymentAmount: '',
+              paymentNote: '',
             }
           : null,
       );
@@ -108,6 +117,9 @@ export function AddHearingUpdateScreen({ navigation, route }: AddHearingUpdateSc
         nextDate: optionalText(values.nextDate),
         nextStep: optionalText(values.nextStep),
         notes: optionalText(values.notes),
+        paymentStatus: values.paymentStatus || null,
+        paymentAmountMinor: values.paymentStatus === 'PAID' ? parsePaymentAmountMinor(values.paymentAmount) : null,
+        paymentNote: values.paymentStatus ? optionalText(values.paymentNote) : null,
       });
       try {
         const updatedCase = await getCaseById(caseId);
@@ -223,6 +235,24 @@ export function AddHearingUpdateScreen({ navigation, route }: AddHearingUpdateSc
             />
           </FormSection>
 
+          <FormSection title="Payment">
+            <Text style={styles.fieldLabel}>Payment Status</Text>
+            <View style={styles.paymentOptions}>
+              {(['PAID', 'UNPAID'] as const).map((status) => {
+                const selected = values.paymentStatus === status;
+                return (
+                  <Pressable key={status} accessibilityRole="radio" accessibilityState={{ checked: selected }} accessibilityLabel={status === 'PAID' ? 'Paid' : 'Unpaid'} onPress={() => updateValue('paymentStatus', status)} style={({ pressed }) => [styles.paymentOption, selected && styles.paymentOptionSelected, pressed && styles.pressed]}>
+                    <Text style={[styles.paymentLabel, selected && styles.paymentLabelSelected]}>{status === 'PAID' ? 'Paid' : 'Unpaid'}</Text>
+                  </Pressable>
+                );
+              })}
+              <Pressable accessibilityRole="radio" accessibilityState={{ checked: values.paymentStatus === '' }} accessibilityLabel="Payment not recorded" onPress={() => { updateValue('paymentStatus', ''); updateValue('paymentAmount', ''); updateValue('paymentNote', ''); }} style={({ pressed }) => [styles.paymentOption, values.paymentStatus === '' && styles.paymentOptionSelected, pressed && styles.pressed]}><Text style={[styles.paymentLabel, values.paymentStatus === '' && styles.paymentLabelSelected]}>Not recorded</Text></Pressable>
+            </View>
+            {errors.paymentStatus ? <Text accessibilityRole="alert" style={styles.fieldError}>{errors.paymentStatus}</Text> : null}
+            {values.paymentStatus === 'PAID' ? <FormInput label="Payment Amount" value={values.paymentAmount} onChangeText={(value) => updateValue('paymentAmount', value)} placeholder="Optional, e.g. 1500.00" error={errors.paymentAmount} keyboardType="decimal-pad" maxLength={18} /> : null}
+            {values.paymentStatus ? <FormInput label="Payment Note" value={values.paymentNote} onChangeText={(value) => updateValue('paymentNote', value)} placeholder="Optional short note" maxLength={500} /> : null}
+          </FormSection>
+
           <FormSection title="Additional Notes">
             <FormInput
               label="Notes"
@@ -269,7 +299,7 @@ function FormSection({ title, children }: FormSectionProps) {
 
 interface FormInputProps extends Pick<
   TextInputProps,
-  'autoCapitalize' | 'maxLength' | 'multiline'
+  'autoCapitalize' | 'keyboardType' | 'maxLength' | 'multiline'
 > {
   label: string;
   value: string;
@@ -293,6 +323,7 @@ function FormInput({
   large = false,
   autoCapitalize,
   maxLength,
+  keyboardType,
 }: FormInputProps) {
   return (
     <View style={styles.field}>
@@ -307,6 +338,7 @@ function FormInput({
         autoCapitalize={autoCapitalize}
         autoCorrect={multiline}
         maxLength={maxLength}
+        keyboardType={keyboardType}
         multiline={multiline}
         textAlignVertical={multiline ? 'top' : 'center'}
         style={[
@@ -338,6 +370,13 @@ function validateHearingForm(values: HearingFormValues): HearingFormErrors {
   }
   if (nextDate && !isValidDateOnly(nextDate)) {
     errors.nextDate = 'Enter a valid date in YYYY-MM-DD format.';
+  }
+  if (values.paymentStatus !== 'PAID' && values.paymentAmount.trim()) {
+    errors.paymentAmount = 'Select Paid before entering an amount.';
+  } else if (values.paymentStatus === 'PAID') {
+    try { parsePaymentAmountMinor(values.paymentAmount); } catch (error) {
+      errors.paymentAmount = error instanceof Error ? error.message : 'Enter a valid amount.';
+    }
   }
   return errors;
 }
@@ -395,6 +434,12 @@ const styles = StyleSheet.create({
   inputError: { borderColor: colors.danger },
   fieldError: { ...typography.caption, color: colors.danger },
   helperText: { ...typography.caption, color: colors.textMuted },
+  paymentOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  paymentOption: { minHeight: 44, justifyContent: 'center', paddingHorizontal: spacing.lg, borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, backgroundColor: colors.surface },
+  paymentOptionSelected: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  paymentLabel: { ...typography.bodyStrong, color: colors.textMuted },
+  paymentLabelSelected: { color: colors.primary },
+  pressed: { opacity: 0.78 },
   submissionError: {
     ...typography.body,
     padding: spacing.md,

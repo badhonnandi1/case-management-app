@@ -35,6 +35,10 @@ assert.match(html, /Rahman &amp; Sons/);
 assert.match(html, /Karim &gt; Co/);
 assert.match(html, /Civil 2\/2026\(Court B\) A &amp; &lt;B&gt; - বাদী - Prepare &gt; file/);
 assert.doesNotMatch(html, /A & <B>/);
+assert.match(html, /\.case \+ \.case \{ border-top:/);
+assert.match(html, /break-inside: avoid-page/);
+assert.match(html, /@page \{ size: A4;/);
+assert.doesNotMatch(html, /\.case \{[^}]*border-bottom/s);
 const minimalHtml = causeListUtils.buildCauseListHtml('2026-09-15', cases, {
   ...options,
   includePartyNames: false,
@@ -58,5 +62,6 @@ assert.equal(reminderUtils.shouldScheduleCaseReminder(baseCase, { enabled: false
 assert.equal(caseFormatUtils.buildCaseNumber('LST', '45', '22'), 'LST 45/22');
 assert.deepEqual(caseFormatUtils.parseCaseNumber('LST 45/22'), { caseType: 'LST', caseSerial: '45', caseYear: '22' });
 assert.equal(caseFormatUtils.buildCauseListLine({ ...baseCase, caseNumber: 'LST 45/22', courtName: 'সদর', caseTitle: 'রহিমা vs করিম', nextStep: 'চূড়ান্ত শুনানি' }), 'LST 45/22(সদর) রহিমা vs করিম - বাদী - চূড়ান্ত শুনানি');
+assert.equal(caseFormatUtils.buildCauseListLine({ ...baseCase, courtShortCode: 'সদর', courtName: 'সদর সিভিল জজ আদালত' }), 'Civil 2/2026(সদর) A & <B> - বাদী - Prepare > file');
 
 console.log('File naming, Cause List sorting/HTML escaping, and local reminder calculation contracts passed.');

@@ -24,6 +24,8 @@ export type RootStackParamList = {
   CauseListGenerator: { selectedDate: string };
   BackupRestore: undefined;
   Storage: undefined;
+  CourtSetup: undefined;
+  CaseTasks: { caseId: string };
 };
 
 export type HomeScreenProps = CompositeScreenProps<
@@ -74,6 +76,8 @@ export type BackupRestoreScreenProps = NativeStackScreenProps<
   'BackupRestore'
 >;
 export type StorageScreenProps = NativeStackScreenProps<RootStackParamList, 'Storage'>;
+export type CourtSetupScreenProps = NativeStackScreenProps<RootStackParamList, 'CourtSetup'>;
+export type CaseTasksScreenProps = NativeStackScreenProps<RootStackParamList, 'CaseTasks'>;
 
 export type SettingsScreenProps = CompositeScreenProps<
   BottomTabScreenProps<RootTabParamList, 'Settings'>,

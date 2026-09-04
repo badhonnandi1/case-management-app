@@ -4,6 +4,7 @@ import { initialMigration } from './001_initial';
 import { caseRemindersMigration } from './002_case_reminders';
 import { caseNumberAndSideMigration } from './003_case_number_and_side';
 import { aiAssistantMigration } from './004_ai_assistant';
+import { offlineCaseToolsMigration } from './005_offline_case_tools';
 
 interface Migration {
   version: number;
@@ -16,6 +17,7 @@ const migrations: readonly Migration[] = [
   caseRemindersMigration,
   caseNumberAndSideMigration,
   aiAssistantMigration,
+  offlineCaseToolsMigration,
 ];
 
 export const LATEST_SCHEMA_VERSION = migrations.at(-1)?.version ?? 0;
@@ -23,6 +25,7 @@ export const LATEST_SCHEMA_VERSION = migrations.at(-1)?.version ?? 0;
 export async function runMigrations(
   database: SQLiteDatabase,
   maximumVersion = LATEST_SCHEMA_VERSION,
+  skippedVersions: ReadonlySet<number> = new Set(),
 ): Promise<void> {
   await database.execAsync(`CREATE TABLE IF NOT EXISTS _migrations (
     version INTEGER PRIMARY KEY NOT NULL,
@@ -37,6 +40,7 @@ export async function runMigrations(
 
   for (const migration of migrations) {
     if (migration.version > maximumVersion) continue;
+    if (skippedVersions.has(migration.version)) continue;
     if (appliedVersions.has(migration.version)) {
       continue;
     }
@@ -60,5 +64,12 @@ export async function runMigrations(
       await database.execAsync('ROLLBACK');
       throw error;
     }
+  }
+
+  const finalVersion = await database.getFirstAsync<{ version: number | null }>(
+    'SELECT MAX(version) AS version FROM _migrations',
+  );
+  if (finalVersion?.version) {
+    await database.execAsync(`PRAGMA user_version = ${finalVersion.version}`);
   }
 }

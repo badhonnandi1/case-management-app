@@ -1,4 +1,4 @@
-import type { Case, RepresentedSide } from '../models/Case';
+import { REPRESENTED_SIDE_OPTIONS, type Case, type RepresentedSide } from '../models/Case.ts';
 
 export function buildCaseNumber(caseType: string, caseSerial: string, caseYear: string): string {
   const type = caseType.trim();
@@ -19,13 +19,12 @@ export function parseCaseNumber(caseNumber: string): {
 }
 
 export function representedSideLabel(side: RepresentedSide | null | undefined): string {
-  if (side === 'PLAINTIFF') return 'বাদী';
-  if (side === 'DEFENDANT') return 'বিবাদী';
-  return 'পক্ষ উল্লেখ নেই';
+  return REPRESENTED_SIDE_OPTIONS.find((option) => option.value === side)?.shortLabel ?? 'পক্ষ উল্লেখ নেই';
 }
 
 export function buildCauseListLine(caseItem: Case): string {
-  const court = caseItem.courtName.trim() ? `(${caseItem.courtName.trim()})` : '';
+  const courtName = caseItem.courtShortCode?.trim() || caseItem.courtName.trim();
+  const court = courtName ? `(${courtName})` : '';
   const step = caseItem.nextStep?.trim() || 'আজকের পদক্ষেপ উল্লেখ নেই';
   return `${caseItem.caseNumber}${court} ${caseItem.caseTitle} - ${representedSideLabel(caseItem.representedSide)} - ${step}`
     .replace(/\s+/g, ' ')
