@@ -1,0 +1,35 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "case-management-ai",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-09-04",
+  "workers_dev": true,
+  "preview_urls": false,
+  "minify": true,
+  "vars": {
+    "AI_ONLINE_ENABLED": "true",
+    "AI_PUBLIC_MODEL_ID": "balanced",
+    "AI_PUBLIC_MODEL_NAME": "Balanced",
+    "GEMINI_DEFAULT_MODEL": "gemini-3.8-flash",
+    "GROQ_FALLBACK_MODEL": "openai/gpt-oss-20b",
+    "AI_FALLBACK_ENABLED": "true",
+    "AI_PRIVACY_POLICY_ID": "free-providers-selected-excerpts-2026-09-04",
+    "AI_CONSENT_POLICY_VERSION": "2026-09-04-free-providers-selected-excerpts-v2",
+    "ANSWER_RATE_LIMIT_PER_MINUTE": "3",
+    "AI_DAILY_PER_TESTER_LIMIT": "10",
+    "AI_DAILY_GLOBAL_LIMIT": "50",
+    "AI_MAX_OUTPUT_TOKENS": "1024",
+    "SESSION_TTL_SECONDS": "900",
+    "PROVIDER_TIMEOUT_MS": "30000",
+    "PROVIDER_CIRCUIT_FAILURE_THRESHOLD": "2",
+    "PROVIDER_CIRCUIT_OPEN_SECONDS": "30"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "case-management-ai-limits",
+      "database_id": "244d36e7-af6e-4e29-8372-878bd6e93b67",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

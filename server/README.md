@@ -1,64 +1,87 @@
-# Case Management AI server
+# Case Management AI backend
 
-This is a separately deployable, provider-neutral HTTP boundary for optional online answers. The Android app keeps indexing and local search on-device. Only excerpts explicitly selected from local search are eligible for this API; PDFs, images, file paths, the SQLite database, and unrelated records are not accepted by the contract.
+The recommended testing deployment is the Cloudflare Worker in `src/worker/`, backed by D1 only for tester access, revocable sessions, request replay prevention, rate counters, and provider circuit state. Questions, evidence, document/case metadata, prompts, answers, and citation text are never persisted. The original Fastify server remains available for local development.
 
-## Runtime and setup
+## Cloudflare testing architecture
 
-- Node.js 20 or newer (Node 22 or newer is recommended for deployment).
-- Install independently with `npm install` inside `server/`.
-- Copy `.env.example` to the ignored `server/.env` only for local development. Never commit `.env`.
-- Run without loading a file using runtime environment variables and `npm run dev`, or use the local ignored file with `npm run dev:env`.
-- Validate with `npm run check`, `npm test`, `npm run build`, and `npm run smoke:no-key`.
+- Worker: `case-management-ai` on the Workers Free plan.
+- D1: `case-management-ai-limits`, binding `DB`, with `migrations/0001_security.sql`.
+- Public API: `GET /health`, `GET /api/v1/config`, `POST /api/v1/sessions`, `POST /api/v1/answers`.
+- Access: a high-entropy invite code is submitted in a small JSON body, SHA-256 hashed before D1 lookup, and never placed in a URL/header. Sessions are signed, short-lived, stored in D1, and revocable.
+- AI routing: Gemini is primary and Groq is fallback. Mobile sees only the logical model `balanced` / `Balanced`.
+- Fallback: only timeout, HTTP 429, retryable network errors, or provider 5xx. Client/provider 4xx, safety refusal, bad input, invalid schema, and citation failure do not fall back.
+- Output: buffered JSON for this test release. Both providers use the same evidence-only prompt, response schema, and server-side citation resolver.
+- Limits: 3 requests/tester/minute, 10/tester/day, 50 globally/day, 64 KiB request body, eight excerpts, and 1,024 output tokens. D1 batch-transaction enforcement is atomic and fails closed.
+- Browser CORS: disabled. Requests with an `Origin` header are rejected; the intended client is native Android.
 
-The official `@google/genai` package is used only by this server. Its documentation explicitly warns against exposing API keys in client-side code: <https://googleapis.github.io/js-genai/>. Structured JSON output uses the SDK's `responseMimeType` and `responseJsonSchema` options described in the official API reference. The stable default model `gemini-3.8-flash` was verified on 2026-09-04 and supports structured output: <https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash>.
+## Local setup and verification
 
-## Environment variables
+Install and run the non-provider checks:
 
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `GEMINI_API_KEY` | For live answers | Backend-only Google AI Studio Gemini API secret. |
-| `SESSION_SIGNING_SECRET` | Production | Independent base64url secret of at least 32 random bytes for anonymous-session signatures. |
-| `GEMINI_DEFAULT_MODEL` | No | Server-owned default; currently `gemini-3.8-flash`. |
-| `GEMINI_ALLOWED_MODELS` | No | Comma-separated allowlist containing the default. Arbitrary client models are rejected. |
-| `AI_ONLINE_ENABLED` | No | Administrative emergency switch; defaults to `true`. |
-| `AI_PRIVACY_POLICY_ID`, `AI_CONSENT_POLICY_VERSION` | No | Trusted policy identifiers. Material changes require a new consent version. |
-| `HOST`, `PORT` | No | Listening address and port. |
-| `NODE_ENV` | Production deployment | Enables application-layer HTTPS enforcement. |
-| `TRUST_PROXY` | Behind a trusted proxy | Lets Fastify honor the trusted proxy protocol value. |
-| `ALLOWED_ORIGINS` | For browser clients | Comma-separated exact HTTPS origins. Native Android requests normally have no `Origin`. |
-| `PROVIDER_TIMEOUT_MS` | No | Provider deadline, default 30 seconds. |
-| `ANSWER_RATE_LIMIT_PER_MINUTE` | No | Anonymous session answer limit, default 10. |
-| `IP_RATE_LIMIT_PER_MINUTE` | No | Answer limit per observed IP, default 30. |
-| `SESSION_ISSUE_LIMIT_PER_MINUTE` | No | Session issuance limit per observed IP, default 10. |
-| `SESSION_TTL_SECONDS` | No | Anonymous session lifetime, default 15 minutes. |
+```sh
+npm install
+npm run check
+npm test
+npm run build
+npm run worker:migrate:local
+npm run worker:dry-run
+```
 
-`GEMINI_API_KEY` and `SESSION_SIGNING_SECRET` are read only by the server. They are never returned, logged, persisted, or shared with mobile code. Do not put either in an `EXPO_PUBLIC_*` variable. For local work, enter secrets into the ignored `server/.env` using a local editor or password-manager injection rather than source code or chat. On Render, enter both directly as secret environment variables in the service Dashboard; see `../docs/ADMIN_GUIDE.md`.
+Prepare ignored local secrets and the initial Owner invite without printing values:
 
-The mobile app's non-secret base URL is configured separately as `EXPO_PUBLIC_AI_BACKEND_URL=https://your-backend.example`. Production mobile builds reject plain HTTP URLs. Removing that variable disables online answers without changing local preparation, search, case management, or backups.
+```sh
+npm run worker:secrets:prepare
+```
 
-## API and privacy boundary
+This creates mode-0600 files under `../.secrets/` and an ignored `.dev.vars`. If a Gemini key exists in ignored `server/.env`, it is copied locally into `.dev.vars`. Add a Groq key to `.dev.vars` using a local editor or password manager; never paste it into chat or a tracked file.
 
-- `GET /health` reports only API readiness and whether the provider is configured.
-- `GET /api/v1/config` reports only the provider display name, approved model list/default, conservative privacy policy, public limits, feature status, and contract version.
-- `POST /api/v1/sessions` issues a signed, short-lived anonymous token held only in mobile memory.
-- `POST /api/v1/answers` requires that bearer token, `application/json`, explicit consent metadata, selected case/document IDs, and at most eight scoped excerpts.
-- A requested model is optional for older-client compatibility. The backend default is used when omitted; when present it must belong to the server allowlist.
-- Request bodies are capped at 64 KiB. Question, scope, per-excerpt, total-evidence, page, identifier, and unknown-field validation occurs before Gemini is called.
-- The prompt treats excerpts as untrusted data and forbids general knowledge, web retrieval, tools, scope expansion, and fabricated facts/citations.
-- Model output is schema-validated. Citation IDs are resolved against the submitted excerpts; document names/pages/IDs are copied from trusted request metadata, never model output.
-- No request, excerpt, question, document name, answer, token, or raw provider error is logged or persisted. There is no server database.
-- Logs contain only request ID, route, status, duration, payload size, evidence count, normalized error category, provider latency, and returned token counts.
+Run direct, synthetic provider checks only after both keys are configured:
 
-The currently configured project uses unpaid Gemini API quota. Under Google's current Gemini API terms, submitted inputs and generated responses for unpaid services may be used to provide, improve, and develop Google products, and users are instructed not to submit sensitive, confidential, or personal information. The Android consent flow therefore uses the conservative free-tier warning. The public configuration accepts only the conservative tier in this release; client configuration cannot declare private processing.
+```sh
+npm run worker:smoke:gemini
+npm run worker:smoke:groq
+```
 
-## Security and deployment
+These scripts print only route/validation/citation IDs and token metadata—not prompts, evidence text, answers, or keys.
 
-Production must terminate HTTPS at a trusted reverse proxy or managed platform and prevent direct public access to an unencrypted listener. Set `NODE_ENV=production` and configure trusted proxy handling for that platform. Browser CORS is an exact allowlist; CORS is not authentication and does not constrain native clients.
+## Deployment
 
-The current abuse layer is deliberately described as anonymous mitigation, not strong authentication: signed short-lived sessions, request replay protection, per-session limits, and observed-IP limits are held in one server process. They reset on restart and do not coordinate across replicas. Before public/high-volume use, place the service behind a managed API gateway/shared rate-limit store and consider real user authentication, Play Integrity, or Firebase App Check. Those require product/account choices and are not configured here.
+Authenticate with OAuth and confirm the selected account is free:
 
-The production target is one stateless Render Free Docker Web Service in Singapore. `render.yaml` keeps automatic deploys off, declares only non-secret policy values, and prompts for both secrets in the Render Dashboard. Render supplies `PORT`; the container listens on `0.0.0.0`, runs as a non-root user, and writes no application state to its ephemeral filesystem. Free services sleep after inactivity, so the mobile connection test performs bounded health-only wake probes and never automatically resends a question. See `../docs/ADMIN_GUIDE.md`.
+```sh
+npx wrangler login
+npx wrangler whoami
+```
 
-## Verification
+Create D1 once, replace the placeholder `database_id` in `wrangler.jsonc` with the returned non-secret UUID, then migrate and seed it:
 
-`npm run smoke:no-key` confirms that health is safe and answer requests return `PROVIDER_NOT_CONFIGURED` without making a provider call. After securely configuring a real key in `server/.env`, run exactly one synthetic call with `npm run smoke:live`. The script uses fictional evidence and prints only model/token metadata and the resolved opaque citation ID—not the question, excerpt, answer, or secret.
+```sh
+npx wrangler d1 create case-management-ai-limits
+npm run worker:migrate:remote
+npx wrangler d1 execute DB --remote --file ../.secrets/owner-seed.sql
+```
+
+Upload only the three secrets from ignored `.dev.vars`, then deploy:
+
+```sh
+npx wrangler secret bulk .dev.vars
+npm run worker:deploy
+```
+
+Never put `GEMINI_API_KEY`, `GROQ_API_KEY`, `SESSION_SIGNING_SECRET`, or the raw Owner invite into `wrangler.jsonc`, examples, source code, logs, mobile configuration, or an APK. The Worker URL is public and is the only backend value later compiled into Android.
+
+## Provider privacy controls
+
+Keep the Gemini API project unbilled and within its free quota. Free-tier Gemini content may be used by Google to improve products, which is disclosed by the versioned app consent text. Keep the Groq organization on its Free plan. Zero Data Retention is an organization setting that must be reviewed and enabled manually in the Groq Console under Data Controls when the account offers it; verify the setting before inviting testers.
+
+## Legacy Fastify development server
+
+`npm run dev:env` loads ignored `server/.env`; `npm run dev` uses the process environment. The Fastify routes remain contract-compatible and now expose only the logical `balanced` model. This path has in-memory mitigation and is not the recommended public test deployment.
+
+The mobile backend URL is non-secret:
+
+```sh
+EXPO_PUBLIC_AI_BACKEND_URL=https://case-management-ai.<workers-subdomain>.workers.dev
+```
+
+Online AI remains disabled in the current APK until Stage 3.

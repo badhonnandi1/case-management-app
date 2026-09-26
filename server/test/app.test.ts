@@ -226,9 +226,9 @@ test('public configuration exposes only the model allowlist and conservative pol
   const response = await app.inject({ method: 'GET', url: '/api/v1/config' });
   assert.equal(response.statusCode, 200);
   const body = response.json<AiPublicConfigDto>();
-  assert.equal(body.providerDisplayName, 'Google Gemini');
-  assert.equal(body.defaultModelId, testConfig.geminiDefaultModel);
-  assert.deepEqual(body.allowedModels.map((model) => model.id), testConfig.geminiAllowedModels);
+  assert.equal(body.providerDisplayName, 'Case Management AI');
+  assert.equal(body.defaultModelId, 'balanced');
+  assert.deepEqual(body.allowedModels.map((model) => model.id), ['balanced']);
   assert.equal(body.privacy.processingTier, 'free_conservative');
   assert.equal(body.privacy.selectedExcerptsOnly, true);
   assert.equal(body.privacy.originalFilesUploaded, false);
@@ -254,7 +254,7 @@ test('uses an allowed requested model and rejects arbitrary model IDs', async ()
     payload: validAnswerRequest({ requestId: 'model-allowed', modelId: 'gemini-3.5-flash-lite' }),
   });
   assert.equal(allowed.statusCode, 200);
-  assert.equal(allowed.json().usage.modelName, 'gemini-3.5-flash-lite');
+  assert.equal(allowed.json().usage.modelName, 'Balanced');
   const rejected = await app.inject({
     method: 'POST', url: '/api/v1/answers',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },

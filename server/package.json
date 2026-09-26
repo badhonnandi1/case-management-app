@@ -16,7 +16,17 @@
     "test": "node --import tsx --test test/*.test.ts",
     "build": "tsc -p tsconfig.build.json",
     "smoke:no-key": "node --import tsx src/noKeySmoke.ts",
-    "smoke:live": "node --env-file=.env --import tsx src/liveSmoke.ts"
+    "smoke:live": "node --env-file=.env --import tsx src/liveSmoke.ts",
+    "worker:secrets:prepare": "node scripts/prepare-worker-secrets.mjs",
+    "worker:owner:rotate": "node scripts/prepare-worker-secrets.mjs --rotate-owner",
+    "worker:smoke:gemini": "node --env-file=.dev.vars --import tsx scripts/provider-smoke.ts gemini",
+    "worker:smoke:groq": "node --env-file=.dev.vars --import tsx scripts/provider-smoke.ts groq",
+    "worker:smoke:deployed-limit": "node scripts/deployed-limit-smoke.mjs",
+    "worker:dev": "wrangler dev",
+    "worker:dry-run": "wrangler deploy --dry-run",
+    "worker:migrate:local": "wrangler d1 migrations apply DB --local",
+    "worker:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "worker:deploy": "wrangler deploy"
   },
   "dependencies": {
     "@fastify/cors": "11.3.0",
@@ -30,6 +40,7 @@
     "eslint": "10.0.0",
     "tsx": "4.23.13",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.69.0"
+    "typescript-eslint": "8.69.0",
+    "wrangler": "^4.129.0"
   }
 }

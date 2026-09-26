@@ -5,6 +5,7 @@ import {
 } from '../../shared/aiAnswerContract.js';
 
 const opaqueId = z.string().trim().min(1).max(128).regex(/^[\p{L}\p{N}._:-]+$/u);
+const publicModelId = z.string().trim().min(1).max(64).regex(/^[a-z][a-z0-9._-]*$/);
 
 export const evidenceSchema = z.object({
   evidenceId: opaqueId,
@@ -29,7 +30,7 @@ export const answerRequestSchema = z.object({
   selectedDocumentIds: z.array(opaqueId).min(1).max(AI_API_LIMITS.selectedDocuments),
   evidence: z.array(evidenceSchema).min(1).max(AI_API_LIMITS.evidenceItems),
   language: z.enum(['auto', 'bn', 'en', 'mixed']),
-  modelId: opaqueId.regex(/^gemini-[a-z0-9.-]+$/).optional(),
+  modelId: publicModelId.optional(),
   consent: z.object({
     granted: z.literal(true),
     version: z.string().trim().min(8).max(128),

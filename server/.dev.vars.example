@@ -1,0 +1,5 @@
+# Copy to the ignored server/.dev.vars for local Worker development only.
+# Never commit real values. Production secrets must use `wrangler secret put`.
+GEMINI_API_KEY=replace_with_google_ai_studio_key
+GROQ_API_KEY=replace_with_groq_console_key
+SESSION_SIGNING_SECRET=replace_with_base64url_32_byte_secret

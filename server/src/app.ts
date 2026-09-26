@@ -140,8 +140,11 @@ export async function buildServerApp(dependencies: BuildAppDependencies): Promis
     if (validated.data.consent.version !== config.consentPolicyVersion) {
       throw new PublicApiError('CONSENT_REQUIRED', 400, 'Consent must be renewed for the current online data policy.');
     }
-    const selectedModel = validated.data.modelId ?? config.geminiDefaultModel;
-    if (!config.geminiAllowedModels.includes(selectedModel)) {
+    const requestedModel = validated.data.modelId ?? 'balanced';
+    const selectedModel = requestedModel === 'balanced'
+      ? config.geminiDefaultModel
+      : requestedModel;
+    if (requestedModel !== 'balanced' && !config.geminiAllowedModels.includes(requestedModel)) {
       throw new PublicApiError('MODEL_NOT_ALLOWED', 400, 'The selected model is not available. Refresh AI configuration and try again.');
     }
     if (!onlineAnswersAvailable(config, provider)) {
@@ -170,6 +173,7 @@ export async function buildServerApp(dependencies: BuildAppDependencies): Promis
             requestId: validated.data.requestId,
             serverRequestId: request.id,
             ...result,
+            usage: { ...result.usage, modelName: 'Balanced' },
           };
         } catch (error) {
           if (timedOut) throw new PublicApiError('PROVIDER_TIMEOUT', 504, 'The online AI service took too long to respond.');
@@ -219,8 +223,8 @@ function publicConfiguration(config: ServerConfig, onlineAnswers: boolean): AiPu
     apiVersion: AI_API_VERSION,
     serverContractVersion: AI_SERVER_CONTRACT_VERSION,
     providerDisplayName: AI_PROVIDER_DISPLAY_NAME,
-    defaultModelId: config.geminiDefaultModel,
-    allowedModels: config.geminiAllowedModels.map((id) => ({ id, displayName: modelDisplayName(id) })),
+    defaultModelId: 'balanced',
+    allowedModels: [{ id: 'balanced', displayName: 'Balanced' }],
     privacy: {
       policyId: config.privacyPolicyId,
       consentVersion: config.consentPolicyVersion,
@@ -235,18 +239,9 @@ function publicConfiguration(config: ServerConfig, onlineAnswers: boolean): AiPu
     },
     features: {
       onlineAnswers,
-      modelSelection: config.geminiAllowedModels.length > 1,
+      modelSelection: false,
     },
   };
-}
-
-function modelDisplayName(id: string): string {
-  const known: Record<string, string> = {
-    'gemini-3.8-flash': 'Gemini 3.8 Flash',
-    'gemini-3.7-flash': 'Gemini 3.7 Flash',
-    'gemini-3.5-flash-lite': 'Gemini 3.5 Flash-Lite',
-  };
-  return known[id] ?? id;
 }
 
 function authorize(request: FastifyRequest, tokens: AnonymousSessionTokens) {

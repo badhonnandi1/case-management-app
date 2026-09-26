@@ -25,7 +25,7 @@ export const testConfig: ServerConfig = {
   geminiApiKey: null,
   geminiDefaultModel: 'gemini-3.8-flash',
   geminiAllowedModels: ['gemini-3.8-flash', 'gemini-3.5-flash-lite'],
-  privacyPolicyId: 'gemini-free-selected-excerpts-2026-09-04',
+  privacyPolicyId: 'free-providers-selected-excerpts-2026-09-04',
   consentPolicyVersion: AI_CONSENT_VERSION,
 };
 
